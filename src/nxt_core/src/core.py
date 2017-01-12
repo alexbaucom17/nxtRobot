@@ -24,27 +24,50 @@ def core_node():
 	pubUS = rospyPublisher("/scanUS", type??, queue_size = 10)
 
 	#loop and do stuff
+	r = rospy.Rate(10) #10 Hz
 	while not rospy.is_shutdown():
 		bot.update_motors()
 		scanData = bot.get_US()
 		pubUS.pub(scanData)
-		rospy.sleep(1.0)
+		r.sleep()
 
 class PIDcontroller:
 'Simple PID motor controller'
 
-	def __init__(self,Kp,Ki,Kd):
+	def __init__(self,Kp,Ki,Kd,M):
 		self.P = Kp
 		self.I = Ki
 		self.D = Kd
-		self.error = 0
-		self.prev_time = ??? Best clock to use?
+		self.sum+error = 0
+		self.prev_error = 0
+		self.prev_time = rospy.get_time()
+		self.motor = M #pass motor object for each tachometer data
+		self.prev_tacho = self.motor.get_tacho()
 
-	def update(self,setpoint,measurement, measurement_time):
-		#do some math
-		pass
+	def update(self,setpoint):
+		#setpoint is a speed to maintain in rad/s
+		
+		#get measurements
+		cur_tacho = self.motor.get_tacho() #tachometer measurment in degrees +/- 1 deg
+		cur_time = rospy.get_time()
+	
+		#find derivatives
+		dt = cur_time - self.prev_time
+		ds = (cur_tacho - self.prev_tacho) * math.pi/180
+		dw = ds/dt
 
+		#error calculations
+		error = setpoint - dw
+		d_error = error - self.prev_error
+		
+		#store values
+		self.sum_error += error
+		self.prev_time = cur_time
+		self.prev_tacho = cur_tacho
 
+		#compute and return output
+		output = self.P*error + self.I*self.sum_error + self.D*d_error
+		return output
 
 class robot:
 ' Class for a wheeled robot with an actuated ultrasonic sensor for mapping '
@@ -66,22 +89,32 @@ class robot:
 		self.mR = nxt.Motor(self.b, motors['right'])
 
 		#set up sensors
-		#TODO maybe make this a bit more flexible?
 		self.touch = nxt.Touch(self.b, sensors['touch'])	
 		self.us = nxt.Ultrasonic(self.b, sensors['us'])
+
+		#angular speeds start at 0
+		self.w_U = 0
+		self.w_L = 0
+		self.w_R = 0
+
+		#set up PID controllers
+		self.pidU = PIDcontroller(1,0,0,self.mU)
+		self.pidL = PIDcontroller(1,0,0,self.mL)
+		self.pidR = PIDcontroller(1,0,0,self.mR)
 
 
 	def update_motors(self)
 		'update current motor speeds'
-
-		#get encoder measurements
 	
 		#call PID updates
+		powU = self.pidU.update(self.w_U)
+		powL = self.pidL.update(self.w_L)
+		powR = self.pidR.update(self.w_R)
 	
 		#pass PID output to motor run method
-
-		pass		
-			
+		self.mU.run(powU)
+		self.mL.run(powL)
+		self.mR.run(powR)			
 
 
 	def set_vel(msg):
@@ -95,15 +128,13 @@ class robot:
 
 		#basic 2d cart assumption (v in m/s)
 		#requires wheels to be in line with center of rotation
-		v_l = v - 0.5*BASE_DIST*w
-		v_r = v + 0.5*BASE_DIST*w
+		v_L = v - 0.5*BASE_DIST*w
+		v_R = v + 0.5*BASE_DIST*w
 
 		#convert to rad/s and store for update_motors to use
-		self.w_l = v_l/(WHEEL_DIAM/2)
-		self.w_r = v_r/(WHEEL_DIAM/2)
+		self.w_L = v_L/(WHEEL_DIAM/2)
+		self.w_R = v_R/(WHEEL_DIAM/2)
 		
-
-
 
 
 if __name__ == '__main__':
