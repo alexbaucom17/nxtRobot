@@ -2,7 +2,6 @@
 
 import nxt
 import rospy
-import tf.transformations
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import LaserScan
 import math
@@ -14,6 +13,9 @@ BASE_DIST = 0.1 #meters
 
 
 def core_node():
+
+	#start ros node
+	rospy.init_node('nxt_core')
 
 	#configure nxt
 	port_left =  nxt.PORT_B
@@ -35,7 +37,7 @@ def core_node():
 		r.sleep()
 
 class PIDcontroller:
-'Simple PID motor controller'
+	'''Simple PID motor controller'''
 
 	def __init__(self,Kp,Ki,Kd,M):
 		self.P = Kp
@@ -53,10 +55,15 @@ class PIDcontroller:
 		#get measurements
 		cur_tacho = self.motor.get_tacho() #tachometer measurment in degrees +/- 1 deg
 		cur_time = rospy.get_time()
+
+		print cur_tacho
+		#tacho appears to be a 3 tuple of (tacho, block_tacho, rotations)
+		#need to test this and grab the right one
 	
 		#find derivatives
 		dt = cur_time - self.prev_time
-		ds = (cur_tacho - self.prev_tacho) * math.pi/180
+		#ds = (cur_tacho - self.prev_tacho) * math.pi/180
+		ds = 1
 		dw = ds/dt
 
 		#error calculations
@@ -72,16 +79,18 @@ class PIDcontroller:
 		output = self.P*error + self.I*self.sum_error + self.D*d_error
 		return output
 
+
 class wheel_base:
 ' Class for a wheeled robot '
 	
 	def __init__(self, left, right):
 
 		#connet to brick
+		rospy.loginfo("Connecting to brick...")
 		try:
 			self.b = nxt.locator.find_one_brick()
 		except:
-			rospy.logerror("No connection to NXT brick. Aborting")
+			rospy.logerr("No connection to NXT brick. Aborting")
 			return None
 
 		#set up motors
@@ -95,9 +104,9 @@ class wheel_base:
 		#set up PID controllers
 		self.pidL = PIDcontroller(1,0,0,self.mL)
 		self.pidR = PIDcontroller(1,0,0,self.mR)
+		
 
-
-	def update_motors(self)
+	def update_motors(self):
 		'update current motor speeds'
 	
 		#call PID updates
@@ -116,7 +125,7 @@ class wheel_base:
 
 		# Do velocity processing here:
 		v = msg.linear.x
-		w = mxg.angular.z
+		w = msg.angular.z
 
 		#basic 2d cart assumption (v in m/s)
 		#requires wheels to be in line with center of rotation
