@@ -24,17 +24,19 @@ def core_node():
 
 	#start ros node
 	rospy.init_node('nxt_core')
-	#rospy.Subscriber("/cmd_vel", Twist, bot.set_vel())
+	rospy.Subscriber("/cmd_vel", Twist, base.set_vel)
 	#pubUS = rospyPublisher("/scanUS", LaserScan, queue_size = 10) #TODO: confirm scan type
 
 	#loop and do stuff
-	r = rospy.Rate(10) #10 Hz
-	base.set_vel(0.1)
+	r = rospy.Rate(50) #Hz
 	while not rospy.is_shutdown():
 		base.update_motors()
 		#scanData = bot.get_US()
 		#pubUS.pub(scanData)
 		r.sleep()
+
+	#clean up at exit
+	base.stop_all()
 
 class PIDcontroller:
 	'''Simple PID motor controller'''
@@ -47,23 +49,27 @@ class PIDcontroller:
 		self.prev_error = 0
 		self.prev_time = rospy.get_time()
 		self.motor = M #pass motor object for each tachometer data
-		self.prev_tacho = self.motor.get_tacho()
+		self.prev_tacho = self.motor.get_tacho().tacho_count
+
+	def cap_output(self,output):
+		if output > 100:
+			output = 100
+		elif output < -100:
+			output = -100
+		else:
+			output = int(output)
+		return output
 
 	def update(self,setpoint):
 		#setpoint is a speed to maintain in rad/s
 		
 		#get measurements
-		cur_tacho = self.motor.get_tacho() #tachometer measurment in degrees +/- 1 deg
+		cur_tacho = self.motor.get_tacho().tacho_count #tachometer measurment in degrees +/- 1 deg
 		cur_time = rospy.get_time()
 
-		print cur_tacho
-		#tacho appears to be a 3 tuple of (tacho, block_tacho, rotations)
-		#need to test this and grab the right one
-	
 		#find derivatives
 		dt = cur_time - self.prev_time
-		#ds = (cur_tacho - self.prev_tacho) * math.pi/180
-		ds = 1
+		ds = (cur_tacho - self.prev_tacho) * math.pi/180
 		dw = ds/dt
 
 		#error calculations
@@ -77,13 +83,13 @@ class PIDcontroller:
 
 		#compute and return output
 		output = self.P*error + self.I*self.sum_error + self.D*d_error
-		return output
+		return self.cap_output(output)
 
 
 class wheel_base:
-' Class for a wheeled robot '
+	' Class for a wheeled robot '
 	
-	def __init__(self, left, right):
+	def __init__(self, port_left, port_right):
 
 		#connet to brick
 		rospy.loginfo("Connecting to brick...")
@@ -102,23 +108,28 @@ class wheel_base:
 		self.w_R = 0
 
 		#set up PID controllers
-		self.pidL = PIDcontroller(1,0,0,self.mL)
-		self.pidR = PIDcontroller(1,0,0,self.mR)
+		self.pidL = PIDcontroller(10,0.1,0,self.mL)
+		self.pidR = PIDcontroller(10,0.1,0,self.mR)
 		
+	def stop_all(self):
+		self.mL.idle()
+		self.mR.idle()
 
 	def update_motors(self):
 		'update current motor speeds'
 	
 		#call PID updates
-		powL = self.pidL.update(self.w_L)
-		powR = self.pidR.update(self.w_R)
+		#negative b/c of motor direction
+		powL = -self.pidL.update(self.w_L)
+		powR = -self.pidR.update(self.w_R)
 	
 		#pass PID output to motor run method
 		self.mL.run(powL)
-		self.mR.run(powR)			
+		self.mR.run(powR)
+		rospy.loginfo("Power: [%f, %f]"%(powL,powR))			
 
 
-	def set_vel(msg):
+	def set_vel(self,msg):
 		rospy.loginfo("Received a /cmd_vel message!")
 		rospy.loginfo("Linear Components: [%f, %f, %f]"%(msg.linear.x, msg.linear.y, msg.linear.z))
 		rospy.loginfo("Angular Components: [%f, %f, %f]"%(msg.angular.x, msg.angular.y, msg.angular.z))
@@ -139,7 +150,7 @@ class wheel_base:
 		
 class Scanner:
 
-	def __init__(self,motor_port, us_port, brick)
+	def __init__(self,motor_port, us_port, brick):
 		self.motor  = nxt.Motor(brick, motor_port)
 		self.US = nxt.Ultrasonic(brick, us_port)
 		self.PID = PIDcontroller(1,0,0,self.motor)
@@ -173,7 +184,7 @@ class Scanner:
 		
 		#check to see if we should get another ping yet
 		cur_a = self.speed_factor * self.motor.get_tacho()
-		if abs(cur_a - self.old_a) > scan_da
+		if abs(cur_a - self.old_a) > scan_da:
 			self.scan_data.append(self.US.get_distance())
 		
 		#check to see if we need to change scan directions

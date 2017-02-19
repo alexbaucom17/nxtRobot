@@ -1,5 +1,6 @@
 <launch>
 
 <node name="nxt_core" type="core.py" pkg="nxt_core" output="screen"/>
+<node name="test" type="cmdvelTest.py" pkg="nxt_core" output="screen"/>
 
 </launch>
