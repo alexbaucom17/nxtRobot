@@ -8,8 +8,8 @@ import math
 import copy
 
 
-WHEEL_DIAM = 0.03 #meters
-BASE_DIST = 0.1 #meters
+WHEEL_DIAM = 0.085 #meters
+BASE_DIST = 0.19 #meters
 
 
 def core_node():
@@ -18,8 +18,8 @@ def core_node():
 	rospy.init_node('nxt_core')
 
 	#configure nxt
-	port_left =  nxt.PORT_B
-	port_right =  nxt.PORT_C
+	port_left =  nxt.PORT_C
+	port_right =  nxt.PORT_B
 	base = wheel_base(port_left,port_right)
 
 	#start ros node
@@ -28,7 +28,7 @@ def core_node():
 	#pubUS = rospyPublisher("/scanUS", LaserScan, queue_size = 10) #TODO: confirm scan type
 
 	#loop and do stuff
-	r = rospy.Rate(50) #Hz
+	r = rospy.Rate(10) #Hz
 	while not rospy.is_shutdown():
 		base.update_motors()
 		#scanData = bot.get_US()
@@ -68,14 +68,19 @@ class PIDcontroller:
 		cur_time = rospy.get_time()
 
 		#find derivatives
-		dt = cur_time - self.prev_time
+		dt = float(cur_time - self.prev_time)
 		ds = (cur_tacho - self.prev_tacho) * math.pi/180
 		dw = ds/dt
 
 		#error calculations
 		error = setpoint - dw
-		d_error = error - self.prev_error
-		
+		d_error = (error - self.prev_error)/dt
+
+		print setpoint
+		print dw	
+		print error
+		print self.sum_error
+	
 		#store values
 		self.sum_error += error
 		self.prev_time = cur_time
@@ -108,8 +113,8 @@ class wheel_base:
 		self.w_R = 0
 
 		#set up PID controllers
-		self.pidL = PIDcontroller(10,0.1,0,self.mL)
-		self.pidR = PIDcontroller(10,0.1,0,self.mR)
+		self.pidL = PIDcontroller(30,9,0,self.mL)
+		self.pidR = PIDcontroller(30,9,0,self.mR)
 		
 	def stop_all(self):
 		self.mL.idle()
@@ -120,8 +125,8 @@ class wheel_base:
 	
 		#call PID updates
 		#negative b/c of motor direction
-		powL = -self.pidL.update(self.w_L)
-		powR = -self.pidR.update(self.w_R)
+		powL = self.pidL.update(self.w_L)
+		powR = self.pidR.update(self.w_R)
 	
 		#pass PID output to motor run method
 		self.mL.run(powL)

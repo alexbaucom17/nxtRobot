@@ -9,7 +9,7 @@ def run_node():
 	cmdvel_pub = rospy.Publisher("/cmd_vel",Twist,queue_size=10)
 	while not rospy.is_shutdown():
 		msg = Twist()
-		msg.linear.x = 0.01 #m/s
+		msg.linear.x = 0.05 #m/s
 		cmdvel_pub.publish(msg)
 		rospy.sleep(1)
 
